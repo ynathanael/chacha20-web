@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decrypt Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Navigation -->
+        <nav class="navbar">
+            <a href="/">
+              <div class="nav-logo">
+                  <img src="{{ url_for('static', filename='assets/Logo Mambo ChaCha.png') }}">
+              </div>
+            </a>
+            <a href="/"><div class="nav-active nav-item">Home</div></a>
+            <a href="/encrypt"><div class="nav-item">Encrypt</div></a>
+            <a href="/decrypt"><div class="nav-item">Decrypt</div></a>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <h1 class="title">Mambo ChaCha</h1>
+            <p class="subtitle">
+                Memungkinkan kamu untuk mengamankan file pribadi menggunakan algoritma enkripsi stream-chipher ChaCha20, dan mendekripsinya kembali hanya dengan QR Code
+            </p>
+
+            <div class="section-container">
+            <!-- Encrypt Section -->
+             <a href="encrypt">
+                <div class="encrypt-section">
+                    <h1 class="title">Enkripsi</h1>
+                </div>
+              </a>
+
+              <!-- Decrypt Section -->
+              <a href="/decrypt">
+                <div class="decrypt-section">
+                  <h1 class="title">Dekripsi</h1>
+                </div>
+              </a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>
