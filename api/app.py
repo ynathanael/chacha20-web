@@ -1,5 +1,5 @@
 from flask import Flask, Response, request, send_file, jsonify, render_template, redirect,send_from_directory
-import os, cv2
+import os, cv2, time
 from werkzeug.utils import secure_filename
 
 from encrypt import encrypt_file
@@ -23,6 +23,7 @@ def gen_frames():  # generate frame by frame from camera
     detector = cv2.QRCodeDetector()
     global qr_code_data
     while True:
+        time.sleep(0.1)
         success, frame = camera.read() 
         if success:
             data, bbox, _ = detector.detectAndDecode(frame)
@@ -30,9 +31,11 @@ def gen_frames():  # generate frame by frame from camera
             if data:
                 qr_code_data = data
                 app.logger.info(f"QR Detected: {qr_code_data}")
+                camera.release()
+                cv2.destroyAllWindows()
                 break
             try:
-                ret, buffer = cv2.imencode('.jpg', cv2.flip(frame,1))
+                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
                 frame = buffer.tobytes()
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
