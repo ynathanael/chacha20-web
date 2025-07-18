@@ -1,68 +1,61 @@
-from flask import Flask, Response, request, send_file, jsonify, render_template, redirect,send_from_directory
-import os, cv2, time
+from flask import Flask, request, send_file, jsonify, render_template, redirect,send_from_directory
+import os
 from werkzeug.utils import secure_filename
 
 from encrypt import encrypt_file
 from qrgen import generate_qr
-from decrypt import decrypt_file, decrypt_file_camera
+from decrypt import decrypt_file_camera
+
+import signal, sys
+
 
 qr_code_data = None
 
 app = Flask(__name__)
-UPLOAD_FOLDER = 'uploads'
+UPLOAD_FOLDER = '/tmp'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {'json', 'txt', 'mp3', 'jpg', 'jpeg', 'pdf', 'mp4'}
+ALLOWED_EXTENSIONS = {
+    'json', 'txt', 'mp3', 'jpg', 'jpeg', 'pdf', 'mp4',
+    'zip', 'tar', 'docx'
+}
+
+def handle_exit(sig, frame):
+    clear_uploads()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, handle_exit)
+signal.signal(signal.SIGTERM, handle_exit)
+
+@app.route('/client_closed', methods=['POST'])
+def client_closed():
+    print("[INFO] Tab browser ditutup. Membersihkan folder uploads...")
+    clear_uploads()
+    return ''
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# gambar dari kamera
-def gen_frames():  # generate frame by frame from camera
-    camera = cv2.VideoCapture(2)
-    detector = cv2.QRCodeDetector()
-    global qr_code_data
-    while True:
-        time.sleep(0.1)
-        success, frame = camera.read() 
-        if success:
-            data, bbox, _ = detector.detectAndDecode(frame)
-            # check if there is a QRCode in the image
-            if data:
-                qr_code_data = data
-                app.logger.info(f"QR Detected: {qr_code_data}")
-                camera.release()
-                cv2.destroyAllWindows()
-                break
-            try:
-                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
-                frame = buffer.tobytes()
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-
-            except Exception as e:
-                pass
-                
-        else:
-            pass
-    with open('static/image.png', 'rb') as f:
-        frame = f.read()
-    yield (b'--frame\r\n'
-    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-        
-@app.route('/video_feed')
-def video_feed():
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+def clear_uploads():
+    for filename in os.listdir(UPLOAD_FOLDER):
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+        try:
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        except Exception as e:
+            print(f"[WARNING] Failed to delete {file_path}: {e}")
 
 #home page
 @app.route('/')
 def index():
+    clear_uploads()
     return render_template('index.html')
 
 
 #encrypt page
 @app.route('/encrypt', methods=['GET', 'POST'])
 def encrypt_route():
+    clear_uploads()    
     if request.method == 'POST':
         if 'file' not in request.files:
             return render_template('encrypt.html', error='No file provided')
@@ -106,54 +99,35 @@ def encrypt_route():
 
 #decrypt page
 @app.route('/decrypt', methods=['GET', 'POST'])
-def decrypt_route():
+def decrypt():
+    decrypted_file = None
+    error = None
+
     if request.method == 'POST':
-        encrypted_file = request.files.get('encrypted_file')
-        qr_code_file = request.files.get('qr_code_file')
-
-        if not encrypted_file or not qr_code_file:
-            return render_template('decrypt.html', error='Both files are required.')
-
-        enc_filename = secure_filename(encrypted_file.filename)
-        qr_filename = secure_filename(qr_code_file.filename)
-
-        enc_path = os.path.join(UPLOAD_FOLDER, enc_filename)
-        qr_path = os.path.join(UPLOAD_FOLDER, qr_filename)
-
-        encrypted_file.save(enc_path)
-        qr_code_file.save(qr_path)
-
         try:
-            output_path = decrypt_file(qr_path, enc_path, UPLOAD_FOLDER)
-            return render_template('decrypt.html', decrypted_file=os.path.basename(output_path))
+            enc_file = request.files.get('encrypted_file')
+            qr_file = request.files.get('qr_code_file')
+            qr_from_camera = request.form.get('qr_from_camera')
+            qr_camera_data = request.form.get('qr_camera_data')
+
+            if not enc_file:
+                raise ValueError("Encrypted file is required.")
+
+            enc_filename = os.path.basename(enc_file.filename)
+            encrypted_path = os.path.join(UPLOAD_FOLDER, enc_filename)
+            enc_file.save(encrypted_path)
+
+            if qr_from_camera == "1" and qr_camera_data:
+                output_path = decrypt_file_camera(qr_camera_data, encrypted_path)
+            else:
+                raise ValueError("QR data not provided.")
+
+            decrypted_file = os.path.basename(output_path)
+
         except Exception as e:
-            return render_template('decrypt.html', error=str(e))
+            error = str(e)
 
-    return render_template('decrypt.html')
-
-#decrypt camera
-@app.route('/decrypt/camera')
-def render_video():
-    return render_template('decrypt.html', camera=True)
-
-@app.route('/process_video', methods=['GET', 'POST'])
-def process_video():
-    global qr_code_data
-    encrypted_file = request.files.get('encrypted_file')
-    if not encrypted_file:
-        return render_template('decrypt.html', error='Please upload encrypted file')
-    if not qr_code_data:
-        return render_template('decrypt.html', error='No QR detected!')
-    enc_filename = secure_filename(encrypted_file.filename)
-
-    enc_path = os.path.join(UPLOAD_FOLDER, enc_filename)
-    encrypted_file.save(enc_path)
-
-    try:
-        output_path = decrypt_file_camera(qr_code_data, enc_path, UPLOAD_FOLDER)
-        return render_template('decrypt.html', decrypted_file=os.path.basename(output_path))
-    except Exception as e:
-        return render_template('decrypt.html', error=str(e))
+    return render_template("decrypt.html", decrypted_file=decrypted_file, error=error)
 
 
 #download file
@@ -166,4 +140,4 @@ def download_file(filename):
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)
